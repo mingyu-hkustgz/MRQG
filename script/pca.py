@@ -9,11 +9,11 @@ import argparse
 from tqdm import tqdm
 from sklearn.decomposition import PCA
 
-source = './DATA'
+source = '/DATA'
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='random projection')
-    parser.add_argument('-d', '--dataset', help='dataset', default='msmarc')
+    parser = argparse.ArgumentParser(description='PCA projection')
+    parser.add_argument('-d', '--dataset', help='dataset', default='msmarc-small')
     parser.add_argument('-b', '--bit', help='quantized bits', default=256)
     args = vars(parser.parse_args())
     dataset = args['dataset']

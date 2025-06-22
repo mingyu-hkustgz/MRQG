@@ -5,6 +5,7 @@ __pycache__
 .uid
 /data
 /DATA
+/bin
 /cmake-build-debug
 /build
 /build-extra

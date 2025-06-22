@@ -52,6 +52,9 @@ class FHTRotator {
         iter_ = dimension_ - remain_;
 #endif
         switch (log_b) {
+            case 5:
+                this->fht_float_ = helper_float_5;
+                break;
             case 6:
                 this->fht_float_ = helper_float_6;
                 break;
@@ -111,6 +114,56 @@ class FHTRotator {
         }
         std::fill(dst + dimension_, dst + paded_dim_, 0.0F);
         fht_float_(dst);
+    }
+
+    void reset(size_t dim){
+        dimension_ = dim;
+        paded_dim_ = 1 << ceil_log2(dim);
+        mat_ = data_type(std::vector<size_t>{1, paded_dim_});
+        size_t log_b = ceil_log2(dim);
+        // log_b = std::max((size_t)6, log_b);  // assert B is a mutiple of 64
+
+        std::uniform_int_distribution<int> bernoulli(0, 1);
+        std::random_device rdd;
+        std::mt19937_64 gen(rdd());
+        for (size_t i = 0; i < paded_dim_; ++i) {
+            mat_[i] = static_cast<float>((2 * bernoulli(gen)) - 1) /
+                      std::sqrt(static_cast<float>(paded_dim_));
+        }
+#if defined(__AVX512F__)
+        remain_ = dimension_ & 0b1111;
+        iter_ = dimension_ - remain_;
+#elif defined(__AVX2__)
+        remain_ = dimension_ & 0b111;
+        iter_ = dimension_ - remain_;
+#else
+        remain_ = dimension_ & 0b11;
+        iter_ = dimension_ - remain_;
+#endif
+        switch (log_b) {
+            case 6:
+                this->fht_float_ = helper_float_6;
+                break;
+            case 7:
+                this->fht_float_ = helper_float_7;
+                break;
+            case 8:
+                this->fht_float_ = helper_float_8;
+                break;
+            case 9:
+                this->fht_float_ = helper_float_9;
+                break;
+            case 10:
+                this->fht_float_ = helper_float_10;
+                break;
+            case 11:
+                this->fht_float_ = helper_float_11;
+                break;
+            default:
+                std::cerr << "dimension of vector is too big\n";
+                abort();
+                break;
+        }
     }
 
     void load(std::ifstream& input) { mat_.load(input); }
