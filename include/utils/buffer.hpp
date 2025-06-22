@@ -69,6 +69,10 @@ class SearchBuffer {
 
     [[nodiscard]] auto has_next() const -> bool { return cur_ < size_; }
 
+    [[nodiscard]] auto get_pos() const -> size_t { return cur_ ; }
+
+    [[nodiscard]] auto get_size() const -> size_t { return size_ ; }
+
     void resize(size_t new_size) {
         this->capacity_ = new_size;
         data_ = std::vector<Candidate<float>, memory::AlignedAllocator<Candidate<float>>>(

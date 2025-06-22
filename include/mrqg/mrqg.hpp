@@ -87,6 +87,10 @@ namespace symqg {
             return &data_.at(row_offset_ * data_id);
         }
 
+        [[nodiscard]] const float *get_vector_norm(PID data_id) const{
+            return &data_.at(row_offset_ * data_id);
+        }
+
         [[nodiscard]] float *get_res_vector(PID data_id)  {
             return &data_.at(row_offset_ * data_id + residual_offset_);
         }
@@ -140,12 +144,11 @@ namespace symqg {
 
         void update_qg(PID, const std::vector<Candidate<float>> &);
 
-        void update_results(buffer::ResultBuffer &, const float *);
+        void update_results(buffer::ResultBuffer &, const float *, float);
 
         float scan_neighbors(
                 const MRQGQuery &q_obj,
                 const float *cur_data,
-                const float *res_data,
                 float *appro_dist,
                 buffer::SearchBuffer &search_pool,
                 uint32_t cur_degree
@@ -329,6 +332,7 @@ namespace symqg {
         std::vector<float> appro_dist(degree_bound_);  // approximate dis
 
         while (search_pool_.has_next()) {
+            auto cur_pos = search_pool_.get_pos();
             PID cur_node = search_pool_.pop();
             if (visited_.get(cur_node)) {
                 continue;
@@ -338,15 +342,17 @@ namespace symqg {
             float sqr_y = scan_neighbors(
                     q_obj,
                     get_vector(cur_node),
-                    get_res_vector(cur_node),
                     appro_dist.data(),
                     this->search_pool_,
                     this->degree_bound_
             );
+            if(cur_pos < search_pool_.get_size()>>1)
+                sqr_y -= 2.0F * space::ip_sim(q_obj.res_data(), get_res_vector(cur_node), res_dim_);
             res_pool.insert(cur_node, sqr_y);
         }
 
-        update_results(res_pool, query);
+        update_results(res_pool, query, q_obj.res_norm());
+
         res_pool.copy_results(results);
     }
 
@@ -356,12 +362,11 @@ namespace symqg {
     inline float ResidualQuantizedGraph::scan_neighbors(
             const MRQGQuery &q_obj,
             const float *cur_data,
-            const float *res_data,
             float *appro_dist,
             buffer::SearchBuffer &search_pool,
             uint32_t cur_degree
     ) const {
-        float sqr_y = space::l2_sqr(q_obj.query_data(), cur_data, flop_dim_) + q_obj.res_norm();
+        float sqr_y = cur_data[0] + space::l2_sqr(q_obj.query_data(), cur_data + 1, flop_dim_) + q_obj.res_norm();
 
         /* Compute approximate distance by Fast Scan */
         const auto *packed_code = reinterpret_cast<const uint8_t *>(&cur_data[code_offset_]);
@@ -397,13 +402,11 @@ namespace symqg {
                     reinterpret_cast<const char *>(get_vector(search_pool.next_id())), 10
             );
         }
-        sqr_y -= q_obj.res_norm();
-        sqr_y += space::l2_sqr(q_obj.res_data(), res_data, res_dim_);
         return sqr_y;
     }
 
     inline void ResidualQuantizedGraph::update_results(
-            buffer::ResultBuffer &result_pool, const float *query
+            buffer::ResultBuffer &result_pool, const float *query, float res_norm
     ) {
         if (result_pool.is_full()) {
             return;
@@ -416,8 +419,9 @@ namespace symqg {
                 PID cur_neighbor = ptr_nb[i];
                 if (!visited_.get(cur_neighbor)) {
                     visited_.set(cur_neighbor);
+                    float *neighbor_data = get_vector_norm(cur_neighbor);
                     result_pool.insert(
-                            cur_neighbor, space::l2_sqr(query, get_vector(cur_neighbor), dimension_)
+                            cur_neighbor, res_norm + neighbor_data[0] +  space::l2_sqr(query, neighbor_data + 1, flop_dim_)
                     );
                 }
             }
@@ -450,6 +454,7 @@ namespace symqg {
         /* Current version of fast scan compute 32 distances */
         std::vector<float> appro_dist(degree_bound_);  // approximate dis
         while (tmp_pool.has_next()) {
+            auto cur_pos = tmp_pool.get_pos();
             auto cur_candi = tmp_pool.pop();
             if (vis.get(cur_candi)) {
                 continue;
@@ -457,10 +462,10 @@ namespace symqg {
             vis.set(cur_candi);
             auto cur_degree = degrees[cur_candi];
             auto sqr_y = scan_neighbors(
-                    q_obj, get_vector(cur_candi), get_res_vector(cur_candi), appro_dist.data(), tmp_pool, cur_degree
-            );
-
+                    q_obj, get_vector_norm(cur_candi), appro_dist.data(), tmp_pool, cur_degree);
             if (cur_candi != cur_id) {
+                if(cur_pos < search_ef>>2)
+                    sqr_y -= 2.0F * space::ip_sim(q_obj.res_data(), get_res_vector(cur_candi), res_dim_);
                 results.emplace_back(cur_candi, sqr_y);
             }
         }
@@ -485,18 +490,13 @@ namespace symqg {
         x_pad.setZero();
         c_pad.setZero();
 
-
-        // Get codes and init triple_x for rabitq
-        float *fac_ptr = get_factor(cur_id);
-        float *triple_x = fac_ptr;
         /* Copy data */
         for (size_t i = 0; i < cur_degree; ++i) {
             auto neighbor_id = new_neighbors[i].id;
-            triple_x[i] = *get_vector_norm(neighbor_id);
-            const auto *cur_data = get_vector(neighbor_id);
+            const auto* cur_data = get_vector(neighbor_id);
             std::copy(cur_data, cur_data + flop_dim_, &x_pad(static_cast<long>(i), 0));
         }
-        const auto *cur_cent = get_vector(cur_id);
+        const auto* cur_cent = get_vector(cur_id);
         std::copy(cur_cent, cur_cent + flop_dim_, &c_pad(0, 0));
 
         /* rotate Matrix */
@@ -508,8 +508,10 @@ namespace symqg {
         this->rotator_.rotate(&c_pad(0, 0), &c_rotated(0, 0));
 
         // Get codes and factors for rabitq
-        float *factor_dq = triple_x + this->degree_bound_;
-        float *factor_vq = factor_dq + this->degree_bound_;
+        float* fac_ptr = get_factor(cur_id);
+        float* triple_x = fac_ptr;
+        float* factor_dq = triple_x + this->degree_bound_;
+        float* factor_vq = factor_dq + this->degree_bound_;
         rabitq_codes(
                 x_rotated, c_rotated, get_packed_code(cur_id), triple_x, factor_dq, factor_vq
         );

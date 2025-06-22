@@ -35,7 +35,7 @@ namespace symqg {
         std::vector<CandidateList> pruned_neighbors_;
         std::vector<HashBasedBooleanSet> visited_list_;
         std::vector<uint32_t> degrees_;
-        float bias_ = 0;
+
         void random_init();
 
         void extend_init();
@@ -56,24 +56,21 @@ namespace symqg {
 
     public:
         explicit MRQGBuilder(
-                ResidualQuantizedGraph &index, uint32_t ef_build, const float *data, size_t num_threads, float bias
+                ResidualQuantizedGraph &index, uint32_t ef_build, const float *data, size_t num_threads
         )
                 : qg_{index}
                 , ef_build_{ef_build}
                 , num_threads_{std::min(num_threads, total_threads())}
-                , num_nodes_{qg_.num_vertices()}
+                ,num_nodes_{qg_.num_vertices()}
                 , dim_{qg_.dimension()}
                 , degree_bound_(qg_.degree_bound())
-                , dist_func_{space::l2_sqr}
+                ,dist_func_{space::l2_sqr}
                 , dist_func_ip_{space::ip_sim}
                 , new_neighbors_(qg_.num_vertices())
-                , pruned_neighbors_(qg_.num_vertices())
-                , visited_list_(
+                ,pruned_neighbors_(qg_.num_vertices()), visited_list_(
                         num_threads_,
-                        HashBasedBooleanSet(std::min(ef_build_ * ef_build_, num_nodes_ / 10))
-                )
-                , degrees_(qg_.num_vertices(), degree_bound_)
-                , bias_(bias){
+                        HashBasedBooleanSet(std::min(ef_build_ * ef_build_, num_nodes_ / 10)))
+                , degrees_(qg_.num_vertices(), degree_bound_) {
             omp_set_num_threads(static_cast<int>(num_threads_));
 
             std::vector<float> centroid =
@@ -200,7 +197,10 @@ namespace symqg {
                 float dik = pool[i].distance;
                 auto djk = res_norm + *qg_.get_vector_norm(pool[i].id) +
                            dist_func_(data_j, qg_.get_vector(pool[i].id), qg_.flop_dim_);
-                if (djk  < dik){
+                if (i < (poolsize >> 1) )
+                    djk += 2.0F * dist_func_ip_(qg_.get_res_vector(candidate_id), qg_.get_res_vector(pool[i].id),
+                                                qg_.res_dim_);
+                if (djk < dik) {
                     if (refine && pruned_neighbors_[cur_id].size() < max_pruned_size_) {
                         pruned_neighbors_[cur_id].emplace_back(pool[i]);
                     }
@@ -346,8 +346,8 @@ namespace symqg {
                         PID rand_id = rand_integer<PID>(0, static_cast<PID>(num_nodes_) - 1);
                         if (rand_id != static_cast<PID>(i) && ids.find(rand_id) == ids.end()) {
                             new_result.emplace_back(
-                                    rand_id, *qg_.get_vector_norm(rand_id) + *qg_.get_vector_norm(i)+
-                                    dist_func_(qg_.get_vector(rand_id), qg_.get_vector(i), qg_.flop_dim_)
+                                    rand_id, *qg_.get_vector_norm(rand_id) + *qg_.get_vector_norm(i) +
+                                             dist_func_(qg_.get_vector(rand_id), qg_.get_vector(i), qg_.flop_dim_)
                             );
                             ids.emplace(rand_id);
                         }

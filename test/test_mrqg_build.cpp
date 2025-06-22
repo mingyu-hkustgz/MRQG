@@ -22,7 +22,7 @@ int main() {
 
     symqg::ResidualQuantizedGraph qg(data.rows(), 32, data.cols(), data.cols()>>2);
 
-    symqg::MRQGBuilder builder(qg, 400, data.data(), 9999, bias);
+    symqg::MRQGBuilder builder(qg, 400, data.data(), 9999);
 
     // 3 iters, refine at last iter
     builder.build(3);

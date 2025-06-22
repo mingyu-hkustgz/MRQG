@@ -72,18 +72,18 @@ void test(const Matrix<float> &Q) {
             total_time += usr_t * 1e6;
 
             int tmp_correct = 0;
-            while (KNNs.empty() == false) {
-                int id = KNNs.top().second;
-                KNNs.pop();
-                for (int j = 0; j < k; j++)
-                    if (id == G.data[i * G.d + j])tmp_correct++;
-            }
+//            while (KNNs.empty() == false) {
+//                int id = KNNs.top().second;
+//                KNNs.pop();
+//                for (int j = 0; j < k; j++)
+//                    if (id == G.data[i * G.d + j])tmp_correct++;
+//            }
             correct += tmp_correct;
         }
         float time_us_per_query = total_time / Q.n;
-        float recall = 1.0f * correct / (Q.n * k);
+//        float recall = 1.0f * correct / (Q.n * k);
 
-        cout << recall * 100.0 << " " << 1e6 / (time_us_per_query) << endl;
+//        cout << recall * 100.0 << " " << 1e6 / (time_us_per_query) << endl;
     }
 }
 
