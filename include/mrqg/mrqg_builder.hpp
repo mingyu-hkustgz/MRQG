@@ -30,15 +30,12 @@ namespace symqg {
         size_t max_candidate_pool_size_ = 750;
         size_t max_pruned_size_ = 300;
         DistFunc<float> dist_func_;
-        DistFunc<float> dist_func_ip_;
         std::vector<CandidateList> new_neighbors_;
         std::vector<CandidateList> pruned_neighbors_;
         std::vector<HashBasedBooleanSet> visited_list_;
         std::vector<uint32_t> degrees_;
 
         void random_init();
-
-        void extend_init();
 
         void search_new_neighbors(bool refine);
 
@@ -61,11 +58,10 @@ namespace symqg {
                 : qg_{index}
                 , ef_build_{ef_build}
                 , num_threads_{std::min(num_threads, total_threads())}
-                ,num_nodes_{qg_.num_vertices()}
+                , num_nodes_{qg_.num_vertices()}
                 , dim_{qg_.dimension()}
                 , degree_bound_(qg_.degree_bound())
-                ,dist_func_{space::l2_sqr}
-                , dist_func_ip_{space::ip_sim}
+                , dist_func_{space::l2_sqr}
                 , new_neighbors_(qg_.num_vertices())
                 ,pruned_neighbors_(qg_.num_vertices()), visited_list_(
                         num_threads_,
@@ -83,8 +79,7 @@ namespace symqg {
             std::cout << "Setting entry_point to " << entry_point << '\n' << std::flush;
 
             qg_.set_ep(entry_point);
-            qg_.copy_norm_vectors(data);
-
+            qg_.copy_vectors(data);
             random_init();
         }
 
@@ -95,7 +90,9 @@ namespace symqg {
                 abort();
             }
             for (size_t i = 0; i < num_iter - 1; ++i) {
+                std::cout<<i<<" iter begin"<<std::endl;
                 iter(false);
+                std::cout<<i<<" iter end"<<std::endl;
             }
             iter(true);
         }
@@ -188,18 +185,13 @@ namespace symqg {
             }
 
             pruned_results.emplace_back(pool[start]);
-            const float res_norm = *qg_.get_vector_norm(candidate_id);
             const float *data_j = qg_.get_vector(candidate_id);
             for (size_t i = start + 1; i < poolsize; ++i) {
                 if (pruned[i]) {
                     continue;
                 }
                 float dik = pool[i].distance;
-                auto djk = res_norm + *qg_.get_vector_norm(pool[i].id) +
-                           dist_func_(data_j, qg_.get_vector(pool[i].id), qg_.flop_dim_);
-                if (i < (poolsize >> 1) )
-                    djk += 2.0F * dist_func_ip_(qg_.get_res_vector(candidate_id), qg_.get_res_vector(pool[i].id),
-                                                qg_.res_dim_);
+                auto djk =  dist_func_(data_j, qg_.get_vector(pool[i].id), dim_);
                 if (djk < dik) {
                     if (refine && pruned_neighbors_[cur_id].size() < max_pruned_size_) {
                         pruned_neighbors_[cur_id].emplace_back(pool[i]);
@@ -285,12 +277,10 @@ namespace symqg {
                     neighbor_set.emplace(rand_id);
                 }
             }
-            const float cur_norm = *qg_.get_vector_norm(i);
             const float *cur_data = qg_.get_vector(i);
             new_neighbors_[i].reserve(degree_bound_);
             for (PID cur_neigh: neighbor_set) {
-                const float next_dist = *qg_.get_vector_norm(cur_neigh) + cur_norm +
-                                        dist_func_(cur_data, qg_.get_vector(cur_neigh), qg_.flop_dim_);
+                const float next_dist = dist_func_(cur_data, qg_.get_vector(cur_neigh), dim_);
                 new_neighbors_[i].emplace_back(cur_neigh, next_dist);
             }
         }
@@ -346,8 +336,7 @@ namespace symqg {
                         PID rand_id = rand_integer<PID>(0, static_cast<PID>(num_nodes_) - 1);
                         if (rand_id != static_cast<PID>(i) && ids.find(rand_id) == ids.end()) {
                             new_result.emplace_back(
-                                    rand_id, *qg_.get_vector_norm(rand_id) + *qg_.get_vector_norm(i) +
-                                             dist_func_(qg_.get_vector(rand_id), qg_.get_vector(i), qg_.flop_dim_)
+                                    rand_id, dist_func_(qg_.get_vector(rand_id), qg_.get_vector(i), dim_)
                             );
                             ids.emplace(rand_id);
                         }

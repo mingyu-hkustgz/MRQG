@@ -67,11 +67,9 @@ namespace symqg {
          * Since we guarantee the degree for each vertex equals degree_bound (multiple of 32),
          * we do not need to store the degree for each vertex
          */
-        size_t vec_offset_ = 0;
         size_t code_offset_ = 0;      // pos of packed code
         size_t factor_offset_ = 0;    // pos of Factor
         size_t neighbor_offset_ = 0;  // pos of Neighbors
-        size_t residual_offset_ = 0;  // pos of Residual Dim
         size_t row_offset_ = 0;       // length of entire row
 
         void initialize();
@@ -81,30 +79,12 @@ namespace symqg {
 
         void copy_vectors(const float *);
 
-        void copy_norm_vectors(const float *);
-
-        [[nodiscard]] float *get_vector_norm(PID data_id) {
-            return &data_.at(row_offset_ * data_id);
-        }
-
-        [[nodiscard]] const float *get_vector_norm(PID data_id) const{
-            return &data_.at(row_offset_ * data_id);
-        }
-
-        [[nodiscard]] float *get_res_vector(PID data_id)  {
-            return &data_.at(row_offset_ * data_id + residual_offset_);
-        }
-
         [[nodiscard]] float *get_vector(PID data_id) {
-            return &data_.at(row_offset_ * data_id + vec_offset_);
+            return &data_.at(row_offset_ * data_id);
         }
 
         [[nodiscard]] const float *get_vector(PID data_id) const {
-            return &data_.at(row_offset_ * data_id + vec_offset_);
-        }
-
-        [[nodiscard]] const float *get_res_vector(PID data_id) const {
-            return &data_.at(row_offset_ * data_id + residual_offset_);
+            return &data_.at(row_offset_ * data_id);
         }
 
         [[nodiscard]] uint8_t *get_packed_code(PID data_id) {
@@ -144,7 +124,7 @@ namespace symqg {
 
         void update_qg(PID, const std::vector<Candidate<float>> &);
 
-        void update_results(buffer::ResultBuffer &, const float *, float);
+        void update_results(buffer::ResultBuffer &, const float *);
 
         float scan_neighbors(
                 const MRQGQuery &q_obj,
@@ -196,14 +176,11 @@ namespace symqg {
     inline void ResidualQuantizedGraph::initialize() {
         /* check size */
         assert(flop_dim_ % 64 == 0);
-
-        this->vec_offset_ = 1;           // Pos of vec residual norm (aligned)
-        this->code_offset_ = vec_offset_ + flop_dim_;  // Pos of packed code (aligned)
+        this->code_offset_ =  dimension_;  // Pos of packed code (aligned)
         this->factor_offset_ = code_offset_ + flop_dim_ / 64 * 2 * degree_bound_;  // Pos of Factor
         this->neighbor_offset_ =
                 factor_offset_ + sizeof(Factor) * degree_bound_ / sizeof(float);
-        this->residual_offset_ = neighbor_offset_ + degree_bound_;
-        this->row_offset_ = residual_offset_ + res_dim_;
+        this->row_offset_ = neighbor_offset_ + degree_bound_;
 
         /* Allocate memory of data*/
         data_ = data::
@@ -219,20 +196,6 @@ namespace symqg {
             const float *src = data + (dimension_ * i);
             float *dst = get_vector(i);
             std::copy(src, src + dimension_, dst);
-        }
-        std::cout << "\tVectors Copied\n";
-    }
-
-    inline void ResidualQuantizedGraph::copy_norm_vectors(const float *data) {
-#pragma omp parallel for schedule(dynamic)
-        for (size_t i = 0; i < num_points_; ++i) {
-            const float *src = data + (dimension_ * i);
-            float res_norm = space::l2_sqr_single(src + flop_dim_, res_dim_);
-            *get_vector_norm(i) = res_norm;
-            float *dst = get_vector(i);
-            std::copy(src, src + flop_dim_, dst);
-            float *nst = get_res_vector(i);
-            std::copy(src + flop_dim_, src + dimension_, nst);
         }
         std::cout << "\tVectors Copied\n";
     }
@@ -267,7 +230,7 @@ namespace symqg {
         /* Check file size */
         size_t filesize = get_filesize(filename);
         size_t correct_size = sizeof(PID) + (sizeof(float) * num_points_ * row_offset_) +
-                              (sizeof(float) * dimension_);
+                              (sizeof(float) * flop_dim_);
         if (filesize != correct_size) {
             std::cerr << "Index file size error! Please make sure the index and "
                          "init parameters are correct\n";
@@ -319,7 +282,7 @@ namespace symqg {
             const float *__restrict__ query, uint32_t knn, uint32_t *__restrict__ results
     ) {
         // query preparation
-        MRQGQuery q_obj(query,query+flop_dim_, flop_dim_, dimension_);
+        MRQGQuery q_obj(query, flop_dim_, dimension_);
         q_obj.query_prepare(rotator_, scanner_);
 
         /* Searching pool initialization */
@@ -332,7 +295,6 @@ namespace symqg {
         std::vector<float> appro_dist(degree_bound_);  // approximate dis
 
         while (search_pool_.has_next()) {
-            auto cur_pos = search_pool_.get_pos();
             PID cur_node = search_pool_.pop();
             if (visited_.get(cur_node)) {
                 continue;
@@ -346,12 +308,10 @@ namespace symqg {
                     this->search_pool_,
                     this->degree_bound_
             );
-            if(cur_pos < search_pool_.get_size()>>1)
-                sqr_y -= 2.0F * space::ip_sim(q_obj.res_data(), get_res_vector(cur_node), res_dim_);
             res_pool.insert(cur_node, sqr_y);
         }
 
-        update_results(res_pool, query, q_obj.res_norm());
+        update_results(res_pool, query);
 
         res_pool.copy_results(results);
     }
@@ -366,7 +326,7 @@ namespace symqg {
             buffer::SearchBuffer &search_pool,
             uint32_t cur_degree
     ) const {
-        float sqr_y = cur_data[0] + space::l2_sqr(q_obj.query_data(), cur_data + 1, flop_dim_) + q_obj.res_norm();
+        float sqr_y = space::l2_sqr(q_obj.query_data(), cur_data, flop_dim_);
 
         /* Compute approximate distance by Fast Scan */
         const auto *packed_code = reinterpret_cast<const uint8_t *>(&cur_data[code_offset_]);
@@ -381,7 +341,7 @@ namespace symqg {
                 packed_code,
                 factor
         );
-
+        sqr_y += space::l2_sqr(q_obj.query_data() + flop_dim_, cur_data + flop_dim_, res_dim_);
         const PID *ptr_nb = reinterpret_cast<const PID *>(&cur_data[neighbor_offset_]);
         for (uint32_t i = 0; i < cur_degree; ++i) {
             PID cur_neighbor = ptr_nb[i];
@@ -406,7 +366,7 @@ namespace symqg {
     }
 
     inline void ResidualQuantizedGraph::update_results(
-            buffer::ResultBuffer &result_pool, const float *query, float res_norm
+            buffer::ResultBuffer &result_pool, const float *query
     ) {
         if (result_pool.is_full()) {
             return;
@@ -419,9 +379,9 @@ namespace symqg {
                 PID cur_neighbor = ptr_nb[i];
                 if (!visited_.get(cur_neighbor)) {
                     visited_.set(cur_neighbor);
-                    float *neighbor_data = get_vector_norm(cur_neighbor);
+                    float *neighbor_data = get_vector(cur_neighbor);
                     result_pool.insert(
-                            cur_neighbor, res_norm + neighbor_data[0] +  space::l2_sqr(query, neighbor_data + 1, flop_dim_)
+                            cur_neighbor, space::l2_sqr(query, neighbor_data, dimension_)
                     );
                 }
             }
@@ -440,8 +400,7 @@ namespace symqg {
             const std::vector<uint32_t> &degrees
     ) const {
         const float *query = get_vector(cur_id);
-        const float *res = get_res_vector(cur_id);
-        MRQGQuery q_obj(query, res, flop_dim_, dimension_);
+        MRQGQuery q_obj(query, flop_dim_, dimension_);
         q_obj.query_prepare(rotator_, scanner_);
 
         /* Searching pool initialization */
@@ -454,7 +413,6 @@ namespace symqg {
         /* Current version of fast scan compute 32 distances */
         std::vector<float> appro_dist(degree_bound_);  // approximate dis
         while (tmp_pool.has_next()) {
-            auto cur_pos = tmp_pool.get_pos();
             auto cur_candi = tmp_pool.pop();
             if (vis.get(cur_candi)) {
                 continue;
@@ -462,10 +420,8 @@ namespace symqg {
             vis.set(cur_candi);
             auto cur_degree = degrees[cur_candi];
             auto sqr_y = scan_neighbors(
-                    q_obj, get_vector_norm(cur_candi), appro_dist.data(), tmp_pool, cur_degree);
+                    q_obj, get_vector(cur_candi), appro_dist.data(), tmp_pool, cur_degree);
             if (cur_candi != cur_id) {
-                if(cur_pos < search_ef>>2)
-                    sqr_y -= 2.0F * space::ip_sim(q_obj.res_data(), get_res_vector(cur_candi), res_dim_);
                 results.emplace_back(cur_candi, sqr_y);
             }
         }

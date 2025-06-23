@@ -69,9 +69,6 @@ class SearchBuffer {
 
     [[nodiscard]] auto has_next() const -> bool { return cur_ < size_; }
 
-    [[nodiscard]] auto get_pos() const -> size_t { return cur_ ; }
-
-    [[nodiscard]] auto get_size() const -> size_t { return size_ ; }
 
     void resize(size_t new_size) {
         this->capacity_ = new_size;
@@ -100,6 +97,8 @@ class ResultBuffer {
     }
 
     [[nodiscard]] auto is_full() const -> bool { return size_ == capacity_; }
+
+    [[nodiscard]] auto get_thresh() const -> float {  return is_full() ? distances_[capacity_-1]: 1e10F; }
 
     const std::vector<PID, memory::AlignedAllocator<PID>>& ids() { return ids_; }
 
