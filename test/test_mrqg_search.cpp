@@ -46,15 +46,15 @@ void GetTime(struct rusage *timeStart, struct rusage *timeEnd, float *userTime, 
 
 std::string dataset = "msmarc-small";
 size_t degree = 32, k=10;
-size_t flop_dim = 256;
+size_t flop_dim = 512;
 auto data_file = "/DATA/" + dataset + "/" + dataset + "_proj.fvecs";
 auto query_file = "/DATA/" + dataset + "/" + dataset + "_query_proj.fvecs";
 auto index_file = "./data/" + dataset + "/" + "symqg" + std::to_string(degree) + ".index";
+auto groundtruth_path = "/DATA/" + dataset + "/" + dataset + "_groundtruth.ivecs";
 long double rotation_time = 0;
-int probe_base = 50;
+int probe_base = 10;
 
 int main(int argc, char *argv[]) {
-    char groundtruth_path[256] = "/DATA/msmarc-small/msmarc-small_groundtruth.ivecs";
     using data_type = symqg::RowMatrix<float>;
     data_type data, query;
     symqg::load_vecs<float, data_type>(data_file.c_str(), data);
@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
     StopW stopw;
     symqg::ResidualQuantizedGraph qg(data.rows(), degree, data.cols(), flop_dim);
     qg.load_index(index_file.c_str());
-    Matrix<unsigned> G(groundtruth_path);
+    Matrix<unsigned> G(groundtruth_path.c_str());
     std::cerr << "Loading Succeed!" << std::endl;
     // ================================================================================================================================
 
@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
     std::vector<uint32_t> KNNs(k * 1000);
     uint32_t  iter = 3;
     while(iter--) {
-        for (int nprobe = probe_base; nprobe <= probe_base * 20; nprobe += probe_base) {
+        for (auto nprobe:{10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 150, 200, 400, 500, 600, 700, 800}) {
             float total_time = 0;
             float total_ratio = 0;
             int correct = 0;

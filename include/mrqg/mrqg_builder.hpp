@@ -21,7 +21,7 @@ namespace symqg {
 
     class MRQGBuilder {
     private:
-        ResidualQuantizedGraph &qg_;
+        ResidualQuantizedGraph& qg_;
         size_t ef_build_;
         size_t num_threads_;
         size_t num_nodes_;
@@ -34,39 +34,34 @@ namespace symqg {
         std::vector<CandidateList> pruned_neighbors_;
         std::vector<HashBasedBooleanSet> visited_list_;
         std::vector<uint32_t> degrees_;
-
         void random_init();
-
         void search_new_neighbors(bool refine);
-
-        void heuristic_prune(PID, CandidateList &, CandidateList &, bool);
-
-        void add_reverse_edges(PID data_id, std::vector<std::mutex> &, bool);
-
+        void heuristic_prune(PID, CandidateList&, CandidateList&, bool);
+        void add_reverse_edges(PID data_id, std::vector<std::mutex>&, bool);
         void add_pruned_edges(
-                const CandidateList &, const CandidateList &, CandidateList &, float
+                const CandidateList&, const CandidateList&, CandidateList&, float
         );
-
         void graph_refine();
-
         void iter(bool);
 
     public:
         explicit MRQGBuilder(
-                ResidualQuantizedGraph &index, uint32_t ef_build, const float *data, size_t num_threads
+                ResidualQuantizedGraph& index, uint32_t ef_build, const float* data, size_t num_threads
         )
-                : qg_{index}
-                , ef_build_{ef_build}
-                , num_threads_{std::min(num_threads, total_threads())}
-                , num_nodes_{qg_.num_vertices()}
-                , dim_{qg_.dimension()}
-                , degree_bound_(qg_.degree_bound())
-                , dist_func_{space::l2_sqr}
-                , new_neighbors_(qg_.num_vertices())
-                ,pruned_neighbors_(qg_.num_vertices()), visited_list_(
-                        num_threads_,
-                        HashBasedBooleanSet(std::min(ef_build_ * ef_build_, num_nodes_ / 10)))
-                , degrees_(qg_.num_vertices(), degree_bound_) {
+        : qg_{index}
+        , ef_build_{ef_build}
+        , num_threads_{std::min(num_threads, total_threads())}
+        , num_nodes_{qg_.num_vertices()}
+        , dim_{qg_.dimension()}
+        , degree_bound_(qg_.degree_bound())
+        , dist_func_{space::l2_sqr}
+        , new_neighbors_(qg_.num_vertices())
+        , pruned_neighbors_(qg_.num_vertices())
+        , visited_list_(
+                num_threads_,
+                HashBasedBooleanSet(std::min(ef_build_ * ef_build_, num_nodes_ / 10))
+        )
+        , degrees_(qg_.num_vertices(), degree_bound_) {
             omp_set_num_threads(static_cast<int>(num_threads_));
 
             std::vector<float> centroid =
@@ -80,6 +75,7 @@ namespace symqg {
 
             qg_.set_ep(entry_point);
             qg_.copy_vectors(data);
+
             random_init();
         }
 
@@ -90,9 +86,7 @@ namespace symqg {
                 abort();
             }
             for (size_t i = 0; i < num_iter - 1; ++i) {
-                std::cout<<i<<" iter begin"<<std::endl;
                 iter(false);
-                std::cout<<i<<" iter end"<<std::endl;
             }
             iter(true);
         }
@@ -101,7 +95,7 @@ namespace symqg {
 #pragma omp parallel for
             for (size_t i = 0; i < num_nodes_; ++i) {
                 std::unordered_set<PID> edges;
-                for (auto nei: new_neighbors_[i]) {
+                for (auto nei : new_neighbors_[i]) {
                     if (edges.find(nei.id) != edges.end()) {
                         std::cout << "dup edges\n";
                     }
@@ -128,11 +122,11 @@ namespace symqg {
         new_result = result;
 
         while (new_result.size() < degree_bound_ && start < pruned_list.size()) {
-            const auto &cur = pruned_list[start];
+            const auto& cur = pruned_list[start];
             bool occlude = false;
-            const float *cur_data = qg_.get_vector(cur.id);
+            const float* cur_data = qg_.get_vector(cur.id);
             float dik_sqr = cur.distance;
-            for (auto &nei: new_result) {
+            for (auto& nei : new_result) {
                 if (cur.id == nei.id) {
                     occlude = true;
                     break;
@@ -185,13 +179,15 @@ namespace symqg {
             }
 
             pruned_results.emplace_back(pool[start]);
-            const float *data_j = qg_.get_vector(candidate_id);
+            const float* data_j = qg_.get_vector(candidate_id);
+
             for (size_t i = start + 1; i < poolsize; ++i) {
                 if (pruned[i]) {
                     continue;
                 }
                 float dik = pool[i].distance;
-                auto djk =  dist_func_(data_j, qg_.get_vector(pool[i].id), dim_);
+                auto djk = dist_func_(data_j, qg_.get_vector(pool[i].id), dim_);
+
                 if (djk < dik) {
                     if (refine && pruned_neighbors_[cur_id].size() < max_pruned_size_) {
                         pruned_neighbors_[cur_id].emplace_back(pool[i]);
@@ -199,6 +195,7 @@ namespace symqg {
                     pruned[i] = true;
                 }
             }
+
             ++start;
         }
     }
@@ -209,13 +206,13 @@ namespace symqg {
             PID cur_id = i;
             auto tid = omp_get_thread_num();
             CandidateList candidates;
-            HashBasedBooleanSet &vis = visited_list_[tid];
+            HashBasedBooleanSet& vis = visited_list_[tid];
             candidates.reserve(2 * max_candidate_pool_size_);
             vis.clear();
             qg_.find_candidates(cur_id, ef_build_, candidates, vis, degrees_);
 
             // add current neighbors
-            for (auto &nei: new_neighbors_[cur_id]) {
+            for (auto& nei : new_neighbors_[cur_id]) {
                 auto neighbor_id = nei.id;
                 if (neighbor_id != cur_id && !vis.get(neighbor_id)) {
                     candidates.emplace_back(nei);
@@ -237,12 +234,12 @@ namespace symqg {
     inline void MRQGBuilder::add_reverse_edges(
             PID data_id, std::vector<std::mutex> &locks, bool refine
     ) {
-        for (auto &&nei: new_neighbors_[data_id]) {
+        for (auto&& nei : new_neighbors_[data_id]) {
             PID dst = nei.id;
             bool dup = false;
-            CandidateList &dst_neighbors = new_neighbors_[dst];
+            CandidateList& dst_neighbors = new_neighbors_[dst];
             std::lock_guard lock(locks[dst]);
-            for (auto &nei: dst_neighbors) {
+            for (auto& nei : dst_neighbors) {
                 if (nei.id == data_id) {
                     dup = true;
                     break;
@@ -277,11 +274,13 @@ namespace symqg {
                     neighbor_set.emplace(rand_id);
                 }
             }
-            const float *cur_data = qg_.get_vector(i);
+
+            const float* cur_data = qg_.get_vector(i);
             new_neighbors_[i].reserve(degree_bound_);
-            for (PID cur_neigh: neighbor_set) {
-                const float next_dist = dist_func_(cur_data, qg_.get_vector(cur_neigh), dim_);
-                new_neighbors_[i].emplace_back(cur_neigh, next_dist);
+            for (PID cur_neigh : neighbor_set) {
+                new_neighbors_[i].emplace_back(
+                        cur_neigh, dist_func_(cur_data, qg_.get_vector(cur_neigh), dim_)
+                );
             }
         }
 
@@ -298,13 +297,13 @@ namespace symqg {
 
 #pragma omp parallel for schedule(dynamic)
         for (size_t i = 0; i < num_nodes_; ++i) {
-            CandidateList &cur_neighbors = new_neighbors_[i];
+            CandidateList& cur_neighbors = new_neighbors_[i];
             size_t cur_degree = cur_neighbors.size();
             if (cur_degree >= degree_bound_) {
                 continue;
             }
 
-            CandidateList &pruned_list = pruned_neighbors_[i];
+            CandidateList& pruned_list = pruned_neighbors_[i];
             CandidateList new_result;
             new_result.reserve(degree_bound_);
 
@@ -329,14 +328,15 @@ namespace symqg {
                 if (new_result.size() < degree_bound_) {
                     std::unordered_set<PID> ids;
                     ids.reserve(degree_bound_);
-                    for (auto &neighbor: new_result) {
+                    for (auto& neighbor : new_result) {
                         ids.emplace(neighbor.id);
                     }
                     while (new_result.size() < degree_bound_) {
                         PID rand_id = rand_integer<PID>(0, static_cast<PID>(num_nodes_) - 1);
                         if (rand_id != static_cast<PID>(i) && ids.find(rand_id) == ids.end()) {
                             new_result.emplace_back(
-                                    rand_id, dist_func_(qg_.get_vector(rand_id), qg_.get_vector(i), dim_)
+                                    rand_id,
+                                    dist_func_(qg_.get_vector(rand_id), qg_.get_vector(i), dim_)
                             );
                             ids.emplace(rand_id);
                         }

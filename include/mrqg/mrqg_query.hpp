@@ -14,32 +14,29 @@ namespace symqg {
     private:
         const float* query_data_ = nullptr;
         std::vector<uint8_t, memory::AlignedAllocator<uint8_t, 64>> lut_;
-        size_t flop_dim_ = 0;
-        size_t res_dim_ = 0;
+        size_t padded_dim_ = 0;
         float width_ = 0;
         float lower_val_ = 0;
         float upper_val_ = 0;
         int32_t sumq_ = 0;
 
     public:
-        explicit MRQGQuery(const float* q, size_t flop_dim, size_t dim)
+        explicit MRQGQuery(const float* q, size_t padded_dim)
                 : query_data_(q)
-                , lut_(flop_dim << 2)
-                , flop_dim_(flop_dim) // no pad dim
-                , res_dim_(dim - flop_dim)
-                {}
+                , lut_(padded_dim << 2)  // padded_dim / 4 * 16
+                , padded_dim_(padded_dim) {}
 
         void query_prepare(const FHTRotator& rotator, const MRQGScanner& scanner) {
             // rotate query
-            std::vector<float, memory::AlignedAllocator<float>> rd_query(flop_dim_);
+            std::vector<float, memory::AlignedAllocator<float>> rd_query(padded_dim_);
             rotator.rotate(query_data_, rd_query.data());
 
             // quantize query
-            std::vector<uint8_t, memory::AlignedAllocator<uint8_t, 64>> byte_query(flop_dim_);
-            scalar::data_range(rd_query.data(), flop_dim_, lower_val_, upper_val_);
+            std::vector<uint8_t, memory::AlignedAllocator<uint8_t, 64>> byte_query(padded_dim_);
+            scalar::data_range(rd_query.data(), padded_dim_, lower_val_, upper_val_);
             width_ = (upper_val_ - lower_val_) / ((1 << QG_BQUERY) - 1);
             scalar::quantize(
-                    byte_query.data(), rd_query.data(), flop_dim_, lower_val_, width_, sumq_
+                    byte_query.data(), rd_query.data(), padded_dim_, lower_val_, width_, sumq_
             );
 
             // pack lut

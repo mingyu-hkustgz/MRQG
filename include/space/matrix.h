@@ -30,7 +30,7 @@ public:
     Matrix(size_t n, size_t d, const Matrix<T> &X, size_t *id); // Submatrix with given row numbers.
     Matrix(const Matrix<T> &X, const Matrix<size_t> &ID); // Submatrix
     Matrix(const Matrix<T> &X, const size_t id); // row
-    Matrix(char *data_file_path); // IO
+    Matrix(const char *data_file_path); // IO
     Matrix(size_t n); // ID
 
     // Deconstruction
@@ -144,7 +144,7 @@ Matrix<T>::Matrix(const Matrix<T> &X, const size_t id) {
 }
 
 template<typename T>
-Matrix<T>::Matrix(char *data_file_path) {
+Matrix<T>::Matrix(const char *data_file_path) {
     n = 0;
     d = 0;
     data = NULL;

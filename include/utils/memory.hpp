@@ -89,7 +89,7 @@ inline void* align_allocate(size_t nbytes, bool huge_page = false) {
 
 static inline void prefetch_l1(const void* addr) {
 #if defined(__SSE2__)
-    _mm_prefetch(addr, _MM_HINT_T0);
+    _mm_prefetch(static_cast<const char *>(addr), _MM_HINT_T0);
 #else
     __builtin_prefetch(addr, 0, 3);
 #endif

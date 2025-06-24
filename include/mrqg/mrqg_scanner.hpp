@@ -90,7 +90,7 @@ namespace symqg {
         MRQGScanner() = default;
 
         explicit MRQGScanner(size_t padded_dim, size_t degree_bound)
-                : padded_dim_(padded_dim), degree_bound_(degree_bound) {}
+        : padded_dim_(padded_dim), degree_bound_(degree_bound) {}
 
         void pack_lut(const uint8_t* __restrict__ byte_query, uint8_t* __restrict__ LUT) const {
             pack_lut_impl(padded_dim_, byte_query, LUT);

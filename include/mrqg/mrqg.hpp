@@ -45,21 +45,22 @@ namespace symqg {
         size_t num_points_ = 0;    // num points
         size_t degree_bound_ = 0;  // degree bound
         size_t dimension_ = 0;     // dimension
-        size_t flop_dim_ = 0;      // First stage dimension
-        size_t res_dim_ = 0;       // Residual stage dimension
+        size_t padded_dim_ = 0;    // padded dimension
+        size_t flop_dim_ = 0;    // padded dimension
         PID entry_point_ = 0;      // Entry point of graph
-        symqg::data::Array<
+
+        data::Array<
                 float,
                 std::vector<size_t>,
-                symqg::memory::AlignedAllocator<
+                memory::AlignedAllocator<
                         float,
                         1 << 22,
                         true>>
                 data_;  // vectors + graph + quantization codes
-        symqg::MRQGScanner scanner_;
-        symqg::FHTRotator rotator_;
-        symqg::HashBasedBooleanSet visited_;
-        symqg::buffer::SearchBuffer search_pool_;
+        MRQGScanner scanner_;
+        FHTRotator rotator_;
+        HashBasedBooleanSet visited_;
+        buffer::SearchBuffer search_pool_;
 
         /*
          * Position of different data in each row
@@ -75,67 +76,68 @@ namespace symqg {
         void initialize();
 
         // search on quantized graph
-        void search_qg(const float *__restrict__ query, uint32_t knn, uint32_t *__restrict__ results);
+        void search_qg(
+                const float* __restrict__ query, uint32_t knn, uint32_t* __restrict__ results
+        );
 
-        void copy_vectors(const float *);
+        void copy_vectors(const float*);
 
-        [[nodiscard]] float *get_vector(PID data_id) {
+        [[nodiscard]] float* get_vector(PID data_id) {
             return &data_.at(row_offset_ * data_id);
         }
 
-        [[nodiscard]] const float *get_vector(PID data_id) const {
+        [[nodiscard]] const float* get_vector(PID data_id) const {
             return &data_.at(row_offset_ * data_id);
         }
 
-        [[nodiscard]] uint8_t *get_packed_code(PID data_id) {
-            return reinterpret_cast<uint8_t *>(&data_.at((row_offset_ * data_id) + code_offset_)
+        [[nodiscard]] uint8_t* get_packed_code(PID data_id) {
+            return reinterpret_cast<uint8_t*>(&data_.at((row_offset_ * data_id) + code_offset_)
             );
         }
 
-        [[nodiscard]] const uint8_t *get_packed_code(PID data_id) const {
-            return reinterpret_cast<const uint8_t *>(
+        [[nodiscard]] const uint8_t* get_packed_code(PID data_id) const {
+            return reinterpret_cast<const uint8_t*>(
                     &data_.at((row_offset_ * data_id) + code_offset_)
             );
         }
 
-        [[nodiscard]] float *get_factor(PID data_id) {
+        [[nodiscard]] float* get_factor(PID data_id) {
             return &data_.at((row_offset_ * data_id) + factor_offset_);
         }
 
-        [[nodiscard]] const float *get_factor(PID data_id) const {
+        [[nodiscard]] const float* get_factor(PID data_id) const {
             return &data_.at((row_offset_ * data_id) + factor_offset_);
         }
 
-        [[nodiscard]] PID *get_neighbors(PID data_id) {
-            return reinterpret_cast<PID *>(&data_.at((row_offset_ * data_id) + neighbor_offset_)
+        [[nodiscard]] PID* get_neighbors(PID data_id) {
+            return reinterpret_cast<PID*>(&data_.at((row_offset_ * data_id) + neighbor_offset_)
             );
         }
 
-        [[nodiscard]] const PID *get_neighbors(PID data_id) const {
-            return reinterpret_cast<const PID *>(
+        [[nodiscard]] const PID* get_neighbors(PID data_id) const {
+            return reinterpret_cast<const PID*>(
                     &data_.at((row_offset_ * data_id) + neighbor_offset_)
             );
         }
 
         void
-        find_candidates(PID, size_t, std::vector<Candidate<float>> &, HashBasedBooleanSet &,
-                        const std::vector<uint32_t> &)
+        find_candidates(PID, size_t, std::vector<Candidate<float>>&, HashBasedBooleanSet&, const std::vector<uint32_t>&)
         const;
 
-        void update_qg(PID, const std::vector<Candidate<float>> &);
+        void update_qg(PID, const std::vector<Candidate<float>>&);
 
-        void update_results(buffer::ResultBuffer &, const float *);
+        void update_results(buffer::ResultBuffer&, const float*);
 
         float scan_neighbors(
-                const MRQGQuery &q_obj,
-                const float *cur_data,
-                float *appro_dist,
-                buffer::SearchBuffer &search_pool,
+                const MRQGQuery& q_obj,
+                const float* cur_data,
+                float* appro_dist,
+                buffer::SearchBuffer& search_pool,
                 uint32_t cur_degree
         ) const;
 
     public:
-        explicit ResidualQuantizedGraph(size_t, size_t, size_t, size_t);
+        explicit ResidualQuantizedGraph(size_t, size_t, size_t, size_t );
 
         [[nodiscard]] auto num_vertices() const { return this->num_points_; }
 
@@ -147,37 +149,51 @@ namespace symqg {
 
         void set_ep(PID entry) { this->entry_point_ = entry; };
 
-        void save_index(const char *) const;
+        void save_index(const char*) const;
 
-        void load_index(const char *);
+        void load_index(const char*);
 
         void set_ef(size_t);
 
         /* search and copy results to KNN */
         void search(
-                const float *__restrict__ query, uint32_t knn, uint32_t *__restrict__ results
+                const float* __restrict__ query, uint32_t knn, uint32_t* __restrict__ results
         );
 
     };
 
     inline ResidualQuantizedGraph::ResidualQuantizedGraph(size_t num, size_t max_deg, size_t dim, size_t f_dim)
-            : num_points_(num),
-              degree_bound_(max_deg),
-              dimension_(dim),
-              flop_dim_(f_dim),
-              res_dim_(dim - flop_dim_),
-              scanner_(f_dim, degree_bound_),
-              rotator_(f_dim),
-              visited_(100),
-              search_pool_(0) {
+            : num_points_(num)
+            , degree_bound_(max_deg)
+            , dimension_(dim)
+            , padded_dim_(1 << ceil_log2(dim))
+            , flop_dim_(f_dim)
+            , scanner_(padded_dim_, degree_bound_)
+            , rotator_(dimension_)
+            , visited_(100)
+            , search_pool_(0) {
         initialize();
+    }
+
+
+    inline void ResidualQuantizedGraph::copy_vectors(const float* data) {
+#pragma omp parallel for schedule(dynamic)
+        for (size_t i = 0; i < num_points_; ++i) {
+            const float* src = data + (dimension_ * i);
+            float* dst = get_vector(i);
+            std::copy(src, src + dimension_, dst);
+        }
+        std::cout << "\tVectors Copied\n";
     }
 
     inline void ResidualQuantizedGraph::initialize() {
         /* check size */
-        assert(flop_dim_ % 64 == 0);
-        this->code_offset_ =  dimension_;  // Pos of packed code (aligned)
-        this->factor_offset_ = code_offset_ + flop_dim_ / 64 * 2 * degree_bound_;  // Pos of Factor
+        assert(padded_dim_ % 64 == 0);
+        assert(padded_dim_ >= dimension_);
+
+        this->code_offset_ = dimension_;  // Pos of packed code (aligned)
+        this->factor_offset_ =
+                code_offset_ + padded_dim_ / 64 * 2 * degree_bound_;  // Pos of Factor
         this->neighbor_offset_ =
                 factor_offset_ + sizeof(Factor) * degree_bound_ / sizeof(float);
         this->row_offset_ = neighbor_offset_ + degree_bound_;
@@ -190,23 +206,13 @@ namespace symqg {
     }
 
 
-    inline void ResidualQuantizedGraph::copy_vectors(const float *data) {
-#pragma omp parallel for schedule(dynamic)
-        for (size_t i = 0; i < num_points_; ++i) {
-            const float *src = data + (dimension_ * i);
-            float *dst = get_vector(i);
-            std::copy(src, src + dimension_, dst);
-        }
-        std::cout << "\tVectors Copied\n";
-    }
-
-    inline void ResidualQuantizedGraph::save_index(const char *filename) const {
+    inline void ResidualQuantizedGraph::save_index(const char* filename) const {
         std::cout << "Saving quantized graph to " << filename << '\n';
         std::ofstream output(filename, std::ios::binary);
         assert(output.is_open());
 
         /* Basic variants */
-        output.write(reinterpret_cast<const char *>(&entry_point_), sizeof(PID));
+        output.write(reinterpret_cast<const char*>(&entry_point_), sizeof(PID));
 
         /* Data */
         data_.save(output);
@@ -218,7 +224,7 @@ namespace symqg {
         std::cout << "\tQuantized graph saved!\n";
     }
 
-    inline void ResidualQuantizedGraph::load_index(const char *filename) {
+    inline void ResidualQuantizedGraph::load_index(const char* filename) {
         std::cout << "loading quantized graph " << filename << '\n';
 
         /* Check existence */
@@ -230,7 +236,7 @@ namespace symqg {
         /* Check file size */
         size_t filesize = get_filesize(filename);
         size_t correct_size = sizeof(PID) + (sizeof(float) * num_points_ * row_offset_) +
-                              (sizeof(float) * flop_dim_);
+                              (sizeof(float) * padded_dim_);
         if (filesize != correct_size) {
             std::cerr << "Index file size error! Please make sure the index and "
                          "init parameters are correct\n";
@@ -241,7 +247,7 @@ namespace symqg {
         assert(input.is_open());
 
         /* Basic variants */
-        input.read(reinterpret_cast<char *>(&entry_point_), sizeof(PID));
+        input.read(reinterpret_cast<char*>(&entry_point_), sizeof(PID));
 
         /* Data */
         data_.load(input);
@@ -282,7 +288,7 @@ namespace symqg {
             const float *__restrict__ query, uint32_t knn, uint32_t *__restrict__ results
     ) {
         // query preparation
-        MRQGQuery q_obj(query, flop_dim_, dimension_);
+        MRQGQuery q_obj(query, padded_dim_);
         q_obj.query_prepare(rotator_, scanner_);
 
         /* Searching pool initialization */
@@ -312,7 +318,6 @@ namespace symqg {
         }
 
         update_results(res_pool, query);
-
         res_pool.copy_results(results);
     }
 
@@ -326,11 +331,11 @@ namespace symqg {
             buffer::SearchBuffer &search_pool,
             uint32_t cur_degree
     ) const {
-        float sqr_y = space::l2_sqr(q_obj.query_data(), cur_data, flop_dim_);
+        float sqr_y = space::l2_sqr(q_obj.query_data(), cur_data, dimension_);
 
         /* Compute approximate distance by Fast Scan */
-        const auto *packed_code = reinterpret_cast<const uint8_t *>(&cur_data[code_offset_]);
-        const auto *factor = &cur_data[factor_offset_];
+        const auto* packed_code = reinterpret_cast<const uint8_t*>(&cur_data[code_offset_]);
+        const auto* factor = &cur_data[factor_offset_];
         this->scanner_.scan_neighbors(
                 appro_dist,
                 q_obj.lut().data(),
@@ -341,8 +346,8 @@ namespace symqg {
                 packed_code,
                 factor
         );
-        sqr_y += space::l2_sqr(q_obj.query_data() + flop_dim_, cur_data + flop_dim_, res_dim_);
-        const PID *ptr_nb = reinterpret_cast<const PID *>(&cur_data[neighbor_offset_]);
+
+        const PID* ptr_nb = reinterpret_cast<const PID*>(&cur_data[neighbor_offset_]);
         for (uint32_t i = 0; i < cur_degree; ++i) {
             PID cur_neighbor = ptr_nb[i];
             float tmp_dist = appro_dist[i];
@@ -359,11 +364,58 @@ namespace symqg {
             }
             search_pool.insert(cur_neighbor, tmp_dist);
             memory::mem_prefetch_l2(
-                    reinterpret_cast<const char *>(get_vector(search_pool.next_id())), 10
+                    reinterpret_cast<const char*>(get_vector(search_pool.next_id())), 10
             );
         }
+
         return sqr_y;
     }
+
+//    inline float ResidualQuantizedGraph::scan_query_neighbors(
+//            const MRQGQuery &q_obj,
+//            const float *cur_data,
+//            float *appro_dist,
+//            buffer::SearchBuffer &search_pool,
+//            uint32_t cur_degree
+//    ) const {
+//        float sqr_y = cur_data[0] + q_obj.vec_norm() - 2.0F * space::ip_sim(q_obj.query_data(), cur_data + 1, flop_dim_);
+//        /* Compute approximate distance by Fast Scan */
+//        const auto *packed_code = reinterpret_cast<const uint8_t *>(&cur_data[code_offset_]);
+//        const auto *factor = &cur_data[factor_offset_];
+//        this->scanner_.scan_neighbors(
+//                appro_dist,
+//                q_obj.lut().data(),
+//                sqr_y,
+//                q_obj.lower_val(),
+//                q_obj.width(),
+//                q_obj.sumq(),
+//                packed_code,
+//                factor
+//        );
+//        const PID *ptr_nb = reinterpret_cast<const PID *>(&cur_data[neighbor_offset_]);
+//        for (uint32_t i = 0; i < cur_degree; ++i) {
+//            PID cur_neighbor = ptr_nb[i];
+//            float tmp_dist = appro_dist[i];
+//#if defined(DEBUG)
+//            std::cout << "Neighbor ID " << cur_neighbor << '\n';
+//        std::cout << "Appro " << appro_dist[i] << '\t';
+//        float __gt_dist__ = l2_sqr(query, get_vector(cur_neighbor), dimension_);
+//        std::cout << "GT " << __gt_dist__ << '\t';
+//        std::cout << "Error " << (appro_dist[i] - __gt_dist__) / __gt_dist__ << '\t';
+//        std::cout << "sqr_y " << sqr_y << '\n';
+//#endif
+//            if (search_pool.is_full(tmp_dist) || visited_.get(cur_neighbor)) {
+//                continue;
+//            }
+//            search_pool.insert(cur_neighbor, tmp_dist);
+//            memory::mem_prefetch_l2(
+//                    reinterpret_cast<const char *>(get_vector(search_pool.next_id())), 10
+//            );
+//        }
+//        return sqr_y;
+//    }
+
+
 
     inline void ResidualQuantizedGraph::update_results(
             buffer::ResultBuffer &result_pool, const float *query
@@ -373,15 +425,14 @@ namespace symqg {
         }
 
         auto ids = result_pool.ids();
-        for (PID data_id: ids) {
-            PID *ptr_nb = get_neighbors(data_id);
+        for (PID data_id : ids) {
+            PID* ptr_nb = get_neighbors(data_id);
             for (uint32_t i = 0; i < this->degree_bound_; ++i) {
                 PID cur_neighbor = ptr_nb[i];
                 if (!visited_.get(cur_neighbor)) {
                     visited_.set(cur_neighbor);
-                    float *neighbor_data = get_vector(cur_neighbor);
                     result_pool.insert(
-                            cur_neighbor, space::l2_sqr(query, neighbor_data, dimension_)
+                            cur_neighbor, space::l2_sqr(query, get_vector(cur_neighbor), dimension_)
                     );
                 }
             }
@@ -399,15 +450,15 @@ namespace symqg {
             HashBasedBooleanSet &vis,
             const std::vector<uint32_t> &degrees
     ) const {
-        const float *query = get_vector(cur_id);
-        MRQGQuery q_obj(query, flop_dim_, dimension_);
+        const float* query = get_vector(cur_id);
+        MRQGQuery q_obj(query, padded_dim_);
         q_obj.query_prepare(rotator_, scanner_);
 
         /* Searching pool initialization */
         buffer::SearchBuffer tmp_pool(search_ef);
         tmp_pool.insert(this->entry_point_, 1e10);
         memory::mem_prefetch_l1(
-                reinterpret_cast<const char *>(get_vector(this->entry_point_)), 10
+                reinterpret_cast<const char*>(get_vector(this->entry_point_)), 10
         );
 
         /* Current version of fast scan compute 32 distances */
@@ -420,7 +471,8 @@ namespace symqg {
             vis.set(cur_candi);
             auto cur_degree = degrees[cur_candi];
             auto sqr_y = scan_neighbors(
-                    q_obj, get_vector(cur_candi), appro_dist.data(), tmp_pool, cur_degree);
+                    q_obj, get_vector(cur_candi), appro_dist.data(), tmp_pool, cur_degree
+            );
             if (cur_candi != cur_id) {
                 results.emplace_back(cur_candi, sqr_y);
             }
@@ -436,13 +488,13 @@ namespace symqg {
             return;
         }
         // copy neighbors
-        PID *neighbor_ptr = get_neighbors(cur_id);
+        PID* neighbor_ptr = get_neighbors(cur_id);
         for (size_t i = 0; i < cur_degree; ++i) {
             neighbor_ptr[i] = new_neighbors[i].id;
         }
 
-        RowMatrix<float> x_pad(cur_degree, flop_dim_);  // pca proj neighbors mat
-        RowMatrix<float> c_pad(1, flop_dim_);           // pca proj duplicate centroid mat
+        RowMatrix<float> x_pad(cur_degree, padded_dim_);  // padded neighbors mat
+        RowMatrix<float> c_pad(1, padded_dim_);           // padded duplicate centroid mat
         x_pad.setZero();
         c_pad.setZero();
 
@@ -450,14 +502,14 @@ namespace symqg {
         for (size_t i = 0; i < cur_degree; ++i) {
             auto neighbor_id = new_neighbors[i].id;
             const auto* cur_data = get_vector(neighbor_id);
-            std::copy(cur_data, cur_data + flop_dim_, &x_pad(static_cast<long>(i), 0));
+            std::copy(cur_data, cur_data + std::min(padded_dim_, dimension_), &x_pad(static_cast<long>(i), 0));
         }
         const auto* cur_cent = get_vector(cur_id);
-        std::copy(cur_cent, cur_cent + flop_dim_, &c_pad(0, 0));
+        std::copy(cur_cent, cur_cent + std::min(padded_dim_, dimension_), &c_pad(0, 0));
 
         /* rotate Matrix */
-        RowMatrix<float> x_rotated(cur_degree, flop_dim_);
-        RowMatrix<float> c_rotated(1, flop_dim_);
+        RowMatrix<float> x_rotated(cur_degree, padded_dim_);
+        RowMatrix<float> c_rotated(1, padded_dim_);
         for (long i = 0; i < static_cast<long>(cur_degree); ++i) {
             this->rotator_.rotate(&x_pad(i, 0), &x_rotated(i, 0));
         }
