@@ -6,7 +6,7 @@
 #include <string>
 #include <getopt.h>
 #include <ctime>
-
+#include "space/l2.hpp"
 #include "mrqg/mrqg.hpp"
 #include "mrqg/mrqg_builder.hpp"
 #include "mrqg/mrqg_query.hpp"
@@ -45,11 +45,11 @@ void GetTime(struct rusage *timeStart, struct rusage *timeEnd, float *userTime, 
 }
 
 std::string dataset = "msmarc-small";
-size_t degree = 32, k=10;
+size_t degree = 64, k=10;
 size_t flop_dim = 512;
 auto data_file = "/DATA/" + dataset + "/" + dataset + "_proj.fvecs";
 auto query_file = "/DATA/" + dataset + "/" + dataset + "_query_proj.fvecs";
-auto index_file = "./data/" + dataset + "/" + "symqg" + std::to_string(degree) + ".index";
+auto index_file = "./data/" + dataset + "/" + "symqg" + std::to_string(degree) + ".origin";
 auto groundtruth_path = "/DATA/" + dataset + "/" + dataset + "_groundtruth.ivecs";
 long double rotation_time = 0;
 int probe_base = 10;

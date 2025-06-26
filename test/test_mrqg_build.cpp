@@ -8,10 +8,10 @@
 #include "utils/stopw.hpp"
 
 std::string dataset = "msmarc-small";
-size_t degree = 32;
+size_t degree = 64;
 size_t flop_dim = 512;
 auto data_file = "/DATA/" + dataset + "/" + dataset + "_proj.fvecs";
-auto index_file = "./data/" + dataset + "/" + "symqg" + std::to_string(degree) + ".index";
+auto index_file = "./data/" + dataset + "/" + "symqg" + std::to_string(degree) + ".origin";
 int main() {
     using data_type = symqg::RowMatrix<float>;
 
@@ -22,7 +22,7 @@ int main() {
 
     symqg::ResidualQuantizedGraph qg(data.rows(), degree, data.cols(), flop_dim);
 
-    symqg::MRQGBuilder builder(qg, 200, data.data(), 9999);
+    symqg::MRQGBuilder builder(qg, 400, data.data(), 9999);
     // 3 iters, refine at last iter
     builder.build(3);
 
@@ -30,6 +30,7 @@ int main() {
 
     std::cout << "Indexing time " << milisecs / 1000.F << " secs\n";
 
+//    qg.reallocate_memory(index_file.c_str());
     qg.save_index(index_file.c_str());
 
     return 0;

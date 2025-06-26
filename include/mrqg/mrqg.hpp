@@ -45,8 +45,8 @@ namespace symqg {
         size_t num_points_ = 0;    // num points
         size_t degree_bound_ = 0;  // degree bound
         size_t dimension_ = 0;     // dimension
-        size_t padded_dim_ = 0;    // padded dimension
         size_t flop_dim_ = 0;    // padded dimension
+        size_t res_dim_ = 0;    // padded dimension
         PID entry_point_ = 0;      // Entry point of graph
 
         data::Array<
@@ -151,6 +151,8 @@ namespace symqg {
 
         void save_index(const char*) const;
 
+        void reallocate_memory(const char* );
+
         void load_index(const char*);
 
         void set_ef(size_t);
@@ -166,10 +168,10 @@ namespace symqg {
             : num_points_(num)
             , degree_bound_(max_deg)
             , dimension_(dim)
-            , padded_dim_(1 << ceil_log2(dim))
             , flop_dim_(f_dim)
-            , scanner_(padded_dim_, degree_bound_)
-            , rotator_(dimension_)
+            , res_dim_(dimension_ - flop_dim_)
+            , scanner_(flop_dim_, degree_bound_)
+            , rotator_(flop_dim_)
             , visited_(100)
             , search_pool_(0) {
         initialize();
@@ -188,14 +190,10 @@ namespace symqg {
 
     inline void ResidualQuantizedGraph::initialize() {
         /* check size */
-        assert(padded_dim_ % 64 == 0);
-        assert(padded_dim_ >= dimension_);
-
-        this->code_offset_ = dimension_;  // Pos of packed code (aligned)
-        this->factor_offset_ =
-                code_offset_ + padded_dim_ / 64 * 2 * degree_bound_;  // Pos of Factor
-        this->neighbor_offset_ =
-                factor_offset_ + sizeof(Factor) * degree_bound_ / sizeof(float);
+        assert(flop_dim_ % 64 == 0);
+        this->code_offset_ = dimension_;  // Pos of packed code (aligned) with vec norm
+        this->factor_offset_ = code_offset_ + flop_dim_ / 64 * 2 * degree_bound_;  // Pos of Factor
+        this->neighbor_offset_ = factor_offset_ + sizeof(Factor) * degree_bound_ / sizeof(float);
         this->row_offset_ = neighbor_offset_ + degree_bound_;
 
         /* Allocate memory of data*/
@@ -236,7 +234,7 @@ namespace symqg {
         /* Check file size */
         size_t filesize = get_filesize(filename);
         size_t correct_size = sizeof(PID) + (sizeof(float) * num_points_ * row_offset_) +
-                              (sizeof(float) * padded_dim_);
+                              (sizeof(float) * flop_dim_);
         if (filesize != correct_size) {
             std::cerr << "Index file size error! Please make sure the index and "
                          "init parameters are correct\n";
@@ -288,9 +286,9 @@ namespace symqg {
             const float *__restrict__ query, uint32_t knn, uint32_t *__restrict__ results
     ) {
         // query preparation
-        MRQGQuery q_obj(query, padded_dim_);
+        MRQGQuery q_obj(query, flop_dim_);
+        q_obj.compute_vec_norm(flop_dim_, res_dim_);
         q_obj.query_prepare(rotator_, scanner_);
-
         /* Searching pool initialization */
         search_pool_.insert(this->entry_point_, FLT_MAX);
 
@@ -331,15 +329,15 @@ namespace symqg {
             buffer::SearchBuffer &search_pool,
             uint32_t cur_degree
     ) const {
-        float sqr_y = space::l2_sqr(q_obj.query_data(), cur_data, dimension_);
-
+        float sqr_pre_y = space::l2_sqr(q_obj.query_data(), cur_data, flop_dim_);
+        float sqr_y = sqr_pre_y + space::l2_sqr(q_obj.query_data() + flop_dim_, cur_data + flop_dim_, res_dim_);
         /* Compute approximate distance by Fast Scan */
         const auto* packed_code = reinterpret_cast<const uint8_t*>(&cur_data[code_offset_]);
         const auto* factor = &cur_data[factor_offset_];
         this->scanner_.scan_neighbors(
                 appro_dist,
                 q_obj.lut().data(),
-                sqr_y,
+                sqr_pre_y + q_obj.vec_norm(),
                 q_obj.lower_val(),
                 q_obj.width(),
                 q_obj.sumq(),
@@ -370,51 +368,6 @@ namespace symqg {
 
         return sqr_y;
     }
-
-//    inline float ResidualQuantizedGraph::scan_query_neighbors(
-//            const MRQGQuery &q_obj,
-//            const float *cur_data,
-//            float *appro_dist,
-//            buffer::SearchBuffer &search_pool,
-//            uint32_t cur_degree
-//    ) const {
-//        float sqr_y = cur_data[0] + q_obj.vec_norm() - 2.0F * space::ip_sim(q_obj.query_data(), cur_data + 1, flop_dim_);
-//        /* Compute approximate distance by Fast Scan */
-//        const auto *packed_code = reinterpret_cast<const uint8_t *>(&cur_data[code_offset_]);
-//        const auto *factor = &cur_data[factor_offset_];
-//        this->scanner_.scan_neighbors(
-//                appro_dist,
-//                q_obj.lut().data(),
-//                sqr_y,
-//                q_obj.lower_val(),
-//                q_obj.width(),
-//                q_obj.sumq(),
-//                packed_code,
-//                factor
-//        );
-//        const PID *ptr_nb = reinterpret_cast<const PID *>(&cur_data[neighbor_offset_]);
-//        for (uint32_t i = 0; i < cur_degree; ++i) {
-//            PID cur_neighbor = ptr_nb[i];
-//            float tmp_dist = appro_dist[i];
-//#if defined(DEBUG)
-//            std::cout << "Neighbor ID " << cur_neighbor << '\n';
-//        std::cout << "Appro " << appro_dist[i] << '\t';
-//        float __gt_dist__ = l2_sqr(query, get_vector(cur_neighbor), dimension_);
-//        std::cout << "GT " << __gt_dist__ << '\t';
-//        std::cout << "Error " << (appro_dist[i] - __gt_dist__) / __gt_dist__ << '\t';
-//        std::cout << "sqr_y " << sqr_y << '\n';
-//#endif
-//            if (search_pool.is_full(tmp_dist) || visited_.get(cur_neighbor)) {
-//                continue;
-//            }
-//            search_pool.insert(cur_neighbor, tmp_dist);
-//            memory::mem_prefetch_l2(
-//                    reinterpret_cast<const char *>(get_vector(search_pool.next_id())), 10
-//            );
-//        }
-//        return sqr_y;
-//    }
-
 
 
     inline void ResidualQuantizedGraph::update_results(
@@ -451,9 +404,9 @@ namespace symqg {
             const std::vector<uint32_t> &degrees
     ) const {
         const float* query = get_vector(cur_id);
-        MRQGQuery q_obj(query, padded_dim_);
+        MRQGQuery q_obj(query, flop_dim_);
         q_obj.query_prepare(rotator_, scanner_);
-
+        q_obj.compute_vec_norm(flop_dim_, res_dim_);
         /* Searching pool initialization */
         buffer::SearchBuffer tmp_pool(search_ef);
         tmp_pool.insert(this->entry_point_, 1e10);
@@ -493,37 +446,60 @@ namespace symqg {
             neighbor_ptr[i] = new_neighbors[i].id;
         }
 
-        RowMatrix<float> x_pad(cur_degree, padded_dim_);  // padded neighbors mat
-        RowMatrix<float> c_pad(1, padded_dim_);           // padded duplicate centroid mat
+        RowMatrix<float> x_pad(cur_degree, flop_dim_);  // padded neighbors mat
+        RowMatrix<float> c_pad(1, flop_dim_);           // padded duplicate centroid mat
         x_pad.setZero();
         c_pad.setZero();
 
         /* Copy data */
+        // Get codes and factors for rabitq with res norm
+        float* fac_ptr = get_factor(cur_id);
+        float* triple_x = fac_ptr;
         for (size_t i = 0; i < cur_degree; ++i) {
             auto neighbor_id = new_neighbors[i].id;
             const auto* cur_data = get_vector(neighbor_id);
-            std::copy(cur_data, cur_data + std::min(padded_dim_, dimension_), &x_pad(static_cast<long>(i), 0));
+            std::copy(cur_data, cur_data + flop_dim_, &x_pad(static_cast<long>(i), 0));
+            triple_x[i] = space::l2_sqr_single(cur_data + flop_dim_, res_dim_);
         }
         const auto* cur_cent = get_vector(cur_id);
-        std::copy(cur_cent, cur_cent + std::min(padded_dim_, dimension_), &c_pad(0, 0));
+        std::copy(cur_cent, cur_cent + flop_dim_, &c_pad(0, 0));
 
         /* rotate Matrix */
-        RowMatrix<float> x_rotated(cur_degree, padded_dim_);
-        RowMatrix<float> c_rotated(1, padded_dim_);
+        RowMatrix<float> x_rotated(cur_degree, flop_dim_);
+        RowMatrix<float> c_rotated(1, flop_dim_);
         for (long i = 0; i < static_cast<long>(cur_degree); ++i) {
             this->rotator_.rotate(&x_pad(i, 0), &x_rotated(i, 0));
         }
         this->rotator_.rotate(&c_pad(0, 0), &c_rotated(0, 0));
 
-        // Get codes and factors for rabitq
-        float* fac_ptr = get_factor(cur_id);
-        float* triple_x = fac_ptr;
         float* factor_dq = triple_x + this->degree_bound_;
         float* factor_vq = factor_dq + this->degree_bound_;
         rabitq_codes(
                 x_rotated, c_rotated, get_packed_code(cur_id), triple_x, factor_dq, factor_vq
         );
     }
+
+
+    inline void ResidualQuantizedGraph::reallocate_memory(const char* filename) {
+        std::cout << "Saving quantized graph to " << filename << '\n';
+        std::ofstream output(filename, std::ios::binary);
+        assert(output.is_open());
+        auto code_length = flop_dim_ / 64 * 2 * degree_bound_;  // length of code
+        auto factor_length =  sizeof(Factor) * degree_bound_ / sizeof(float); // factor length
+        /* Basic variants */
+        output.write(reinterpret_cast<const char*>(&entry_point_), sizeof(PID));
+        for(size_t i = 0;i < num_points_; i++){
+            output.write(reinterpret_cast<const char*>(get_vector(i)), sizeof(float) * flop_dim_);
+            output.write(reinterpret_cast<const char*>(get_packed_code(i)), sizeof(float) * code_length);
+            output.write(reinterpret_cast<const char*>(get_factor(i)), sizeof(float) * factor_length);
+            output.write(reinterpret_cast<const char*>(get_neighbors(i)), sizeof(float) * degree_bound_);
+        }
+        /* Rotator */
+        this->rotator_.save(output);
+        output.close();
+        std::cout << "\tQuantized graph saved!\n";
+    }
+
 
 }
 

@@ -12,6 +12,7 @@
 namespace symqg {
     class MRQGQuery {
     private:
+        float vec_norm_ = 0;
         const float* query_data_ = nullptr;
         std::vector<uint8_t, memory::AlignedAllocator<uint8_t, 64>> lut_;
         size_t padded_dim_ = 0;
@@ -49,11 +50,18 @@ namespace symqg {
 
         [[nodiscard]] const int32_t& sumq() const { return sumq_; }
 
+        [[nodiscard]] const float& vec_norm() const { return vec_norm_; }
+
         [[nodiscard]] const std::vector<uint8_t, memory::AlignedAllocator<uint8_t, 64>>& lut(
         ) const {
             return lut_;
         }
 
         [[nodiscard]] const float* query_data() const { return query_data_; }
+
+        inline void compute_vec_norm(size_t begin, size_t dim){
+            vec_norm_ = space::l2_sqr_single(query_data_ + begin, dim);
+        }
+
     };
 }  // namespace symqg
