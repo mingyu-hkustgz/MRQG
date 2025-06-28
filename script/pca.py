@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 import struct
-import time
+from time import time
 import os
 from utils import *
 import argparse
@@ -13,7 +13,7 @@ source = '/DATA'
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='PCA projection')
-    parser.add_argument('-d', '--dataset', help='dataset', default='gist')
+    parser.add_argument('-d', '--dataset', help='dataset', default='OpenAI-3072')
     args = vars(parser.parse_args())
     dataset = args['dataset']
 
@@ -25,15 +25,15 @@ if __name__ == "__main__":
     Q = fvecs_read(query_path)
     N, D = X.shape
     pca = PCA(n_components=D)
-    if N < 1000000:
+    if N * D < 100000:
         pca.fit(X)
     else:
-        pca.fit(X[:1000000])
+        pca.fit(X[:100000])
     projection_matrix = pca.components_.T
     base = np.dot(X, projection_matrix)
     query = np.dot(Q, projection_matrix)
-    mean_ = np.mean(base[:1000000], axis=0)
-    var_ = np.var(base[:1000000], axis=0)
+    mean_ = np.mean(base[:100000], axis=0)
+    var_ = np.var(base[:100000], axis=0)
     base -= mean_
     query -= mean_
     mean_var = np.vstack((mean_, var_))

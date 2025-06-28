@@ -70,6 +70,18 @@ namespace symqg {
                 case 11:
                     this->fht_float_ = helper_float_11;
                     break;
+                case 12:
+                    this->fht_float_ = helper_float_12;
+                    break;
+                case 13:
+                    this->fht_float_ = helper_float_13;
+                    break;
+                case 14:
+                    this->fht_float_ = helper_float_14;
+                    break;
+                case 15:
+                    this->fht_float_ = helper_float_15;
+                    break;
                 default:
                     std::cerr << "dimension of vector is too big\n";
                     abort();

@@ -6,10 +6,9 @@
 #include <string>
 #include <getopt.h>
 #include <ctime>
-#include "space/l2.hpp"
-#include "mrqg/mrqg.hpp"
-#include "mrqg/mrqg_builder.hpp"
-#include "mrqg/mrqg_query.hpp"
+
+#include "qg/qg.hpp"
+#include "qg/qg_builder.hpp"
 #include "space/matrix.h"
 #include "sys/resource.h"
 #include "sys/time.h"
@@ -36,7 +35,7 @@ void GetCurTime(rusage *curTime) {
 * @Param userTime, sysTime get back the time information.
 *
 * @Return void.
-*/
+ */
 void GetTime(struct rusage *timeStart, struct rusage *timeEnd, float *userTime, float *sysTime) {
     (*userTime) = ((float) (timeEnd->ru_utime.tv_sec - timeStart->ru_utime.tv_sec)) +
                   ((float) (timeEnd->ru_utime.tv_usec - timeStart->ru_utime.tv_usec)) * 1e-6;
@@ -48,11 +47,10 @@ void GetTime(struct rusage *timeStart, struct rusage *timeEnd, float *userTime, 
 int main(int argc, char *argv[]) {
     size_t degree = 64, k=20;
     std::string dataset(argv[1]);
-    size_t flop_dim = std::atoi(argv[2]);
-    k = std::atoi(argv[3]);
+    k = std::atoi(argv[2]);
     auto data_file = "/DATA/" + dataset + "/" + dataset + "_proj.fvecs";
     auto query_file = "/DATA/" + dataset + "/" + dataset + "_query_proj.fvecs";
-    auto index_file = "./data/" + dataset + "/" + "mrqg" + std::to_string(degree) + ".origin";
+    auto index_file = "./data/" + dataset + "/" + "symqg" + std::to_string(degree) + ".index";
     auto groundtruth_path = "/DATA/" + dataset + "/" + dataset + "_groundtruth.ivecs";
     long double rotation_time = 0;
     int probe_base = 10;
@@ -62,7 +60,7 @@ int main(int argc, char *argv[]) {
     symqg::load_vecs<float, data_type>(data_file.c_str(), data);
     symqg::load_vecs<float, data_type>(query_file.c_str(), query);
     StopW stopw;
-    symqg::ResidualQuantizedGraph qg(data.rows(), degree, data.cols(), flop_dim);
+    symqg::QuantizedGraph qg(data.rows(), degree, data.cols());
     qg.load_index(index_file.c_str());
     Matrix<unsigned> G(groundtruth_path.c_str());
     std::cerr << "Loading Succeed!" << std::endl;
@@ -71,7 +69,7 @@ int main(int argc, char *argv[]) {
     float sys_t, usr_t, usr_t_sum = 0, total_time = 0, search_time = 0;
     struct rusage run_start, run_end;
     std::vector<uint32_t> KNNs(k * 1000);
-    std::string result_path = "./results/recall@" + std::string(argv[3]) +  "/" + dataset + "/mrqg.log";
+    std::string result_path = "./results/recall@" + std::string(argv[2]) + "/" + dataset + "/qg.log";
     std::ofstream fout(result_path);
     uint32_t  iter = 3;
     while(iter--) {
